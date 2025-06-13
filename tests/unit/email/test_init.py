@@ -1,14 +1,4 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: Apache-2.0
 
 import datetime
 
@@ -535,17 +525,14 @@ class TestSendEmail:
 
 class TestSendPasswordResetEmail:
     @pytest.mark.parametrize(
-        ("verified", "email_addr"),
+        "email_addr",
         [
-            (True, None),
-            (False, None),
-            (True, "other@example.com"),
-            (False, "other@example.com"),
+            None,
+            "other@example.com",
         ],
     )
     def test_send_password_reset_email(
         self,
-        verified,
         email_addr,
         pyramid_request,
         pyramid_config,
@@ -556,7 +543,7 @@ class TestSendPasswordResetEmail:
         stub_user = pretend.stub(
             id="id",
             email="email@example.com",
-            primary_email=pretend.stub(email="email@example.com", verified=verified),
+            primary_email=pretend.stub(email="email@example.com", verified=True),
             username="username_value",
             name="name_value",
             last_login="last_login",
@@ -565,7 +552,7 @@ class TestSendPasswordResetEmail:
         if email_addr is None:
             stub_email = None
         else:
-            stub_email = pretend.stub(email=email_addr, verified=verified)
+            stub_email = pretend.stub(email=email_addr, verified=True)
         pyramid_request.method = "POST"
         token_service.dumps = pretend.call_recorder(lambda a: "TOKEN")
 
@@ -654,11 +641,36 @@ class TestSendPasswordResetEmail:
                 "warehouse.emails.scheduled",
                 tags=[
                     "template_name:password-reset",
-                    "allow_unverified:True",
+                    "allow_unverified:False",
                     "repeat_window:none",
                 ],
             )
         ]
+
+    def test_unverified_email_sends_alt_notice(self, pyramid_config, db_request):
+        unverified_email = EmailFactory.create(verified=False)
+
+        subject_renderer = pyramid_config.testing_add_renderer(
+            "email/password-reset-unverified/subject.txt"
+        )
+        subject_renderer.string_response = "Email Subject"
+        body_renderer = pyramid_config.testing_add_renderer(
+            "email/password-reset-unverified/body.txt"
+        )
+        body_renderer.string_response = "Email Body"
+        html_renderer = pyramid_config.testing_add_renderer(
+            "email/password-reset-unverified/body.html"
+        )
+        html_renderer.string_response = "Email HTML Body"
+
+        result = email.send_password_reset_unverified_email(
+            db_request, (unverified_email.user, unverified_email)
+        )
+
+        assert result == {}
+        subject_renderer.assert_()
+        body_renderer.assert_()
+        html_renderer.assert_()
 
 
 class TestEmailVerificationEmail:
